@@ -195,6 +195,30 @@ describe("transformMrkdwn", () => {
     });
   });
 
+  describe("bullet lists (text fallback)", () => {
+    it("converts • to - for bullet lists", () => {
+      expect(transformMrkdwn("• Item 1\n• Item 2\n• Item 3")).toBe(
+        "- Item 1\n- Item 2\n- Item 3",
+      );
+    });
+
+    it("preserves indentation for nested bullets", () => {
+      expect(transformMrkdwn("• Parent\n  • Child\n    • Grandchild")).toBe(
+        "- Parent\n  - Child\n    - Grandchild",
+      );
+    });
+
+    it("does not convert • in the middle of text", () => {
+      expect(transformMrkdwn("Price is 5•00")).toBe("Price is 5•00");
+    });
+
+    it("handles mixed content with bullets", () => {
+      expect(transformMrkdwn("List:\n• One\n• Two\nDone")).toBe(
+        "List:\n- One\n- Two\nDone",
+      );
+    });
+  });
+
   describe("combined formatting", () => {
     it("handles mixed formatting", () => {
       const input = "Hey <@U123>, check *this* _link_: <https://example.com|click>";

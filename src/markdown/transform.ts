@@ -49,6 +49,7 @@ export function transformMrkdwn(
 
   // 4. Block-level transforms
   result = transformBlockquotes(result);
+  result = transformBulletLists(result);
 
   // Restore code blocks
   result = restore(result);
@@ -192,4 +193,10 @@ function transformBlockquotes(text: string): string {
     }
     return `> ${content}`;
   });
+}
+
+function transformBulletLists(text: string): string {
+  // Slack uses • (U+2022) for bullet lists in the text fallback field.
+  // Preserve leading whitespace for nested list indentation.
+  return text.replace(/^(\s*)•(\s)/gm, "$1-$2");
 }

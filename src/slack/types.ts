@@ -44,8 +44,115 @@ export interface SlackMessage {
   ts: string;
   thread_ts?: string;
   reply_count?: number;
+  blocks?: SlackBlock[];
   files?: SlackFile[];
   attachments?: SlackAttachment[];
+}
+
+// --- Block Kit types ---
+
+export type SlackBlock = RichTextBlock | UnknownBlock;
+
+export interface RichTextBlock {
+  type: "rich_text";
+  block_id?: string;
+  elements: RichTextElement[];
+}
+
+interface UnknownBlock {
+  type: string;
+  [key: string]: unknown;
+}
+
+export type RichTextElement =
+  | RichTextSection
+  | RichTextList
+  | RichTextPreformatted
+  | RichTextQuote;
+
+export interface RichTextSection {
+  type: "rich_text_section";
+  elements: RichTextInlineElement[];
+}
+
+export interface RichTextList {
+  type: "rich_text_list";
+  style: "bullet" | "ordered";
+  indent: number;
+  border?: number;
+  elements: RichTextSection[];
+}
+
+export interface RichTextPreformatted {
+  type: "rich_text_preformatted";
+  elements: RichTextInlineElement[];
+  border?: number;
+}
+
+export interface RichTextQuote {
+  type: "rich_text_quote";
+  elements: RichTextInlineElement[];
+  border?: number;
+}
+
+export type RichTextInlineElement =
+  | RichTextText
+  | RichTextLink
+  | RichTextUserMention
+  | RichTextChannelMention
+  | RichTextUsergroupMention
+  | RichTextEmoji
+  | RichTextBroadcast;
+
+export interface RichTextStyle {
+  bold?: boolean;
+  italic?: boolean;
+  strike?: boolean;
+  code?: boolean;
+}
+
+export interface RichTextText {
+  type: "text";
+  text: string;
+  style?: RichTextStyle;
+}
+
+export interface RichTextLink {
+  type: "link";
+  url: string;
+  text?: string;
+  style?: RichTextStyle;
+}
+
+export interface RichTextUserMention {
+  type: "user";
+  user_id: string;
+  style?: RichTextStyle;
+}
+
+export interface RichTextChannelMention {
+  type: "channel";
+  channel_id: string;
+  style?: RichTextStyle;
+}
+
+export interface RichTextUsergroupMention {
+  type: "usergroup";
+  usergroup_id: string;
+  style?: RichTextStyle;
+}
+
+export interface RichTextEmoji {
+  type: "emoji";
+  name: string;
+  unicode?: string;
+  style?: RichTextStyle;
+}
+
+export interface RichTextBroadcast {
+  type: "broadcast";
+  range: "here" | "channel" | "everyone";
+  style?: RichTextStyle;
 }
 
 /** File attached to a message */

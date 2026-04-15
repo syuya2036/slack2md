@@ -1,6 +1,6 @@
 import type { SlackMessage } from "../slack/types";
-import { transformMrkdwn, type UserResolver } from "./transform";
-import { formatAttachments } from "./attachments";
+import type { UserResolver } from "./transform";
+import { renderMessageBody } from "./render";
 
 /**
  * Format a thread (parent + replies) into a Markdown document.
@@ -43,15 +43,10 @@ function formatMessageSection(
   const time = formatTimestamp(message.ts);
   parts.push(`**${author}** — ${time}`);
 
-  // Message body
-  if (message.text) {
-    parts.push(transformMrkdwn(message.text, userResolver));
-  }
-
-  // Attachments
-  const att = formatAttachments(message.files, message.attachments);
-  if (att) {
-    parts.push(att);
+  // Message body (uses blocks when available, falls back to text)
+  const body = renderMessageBody(message, userResolver);
+  if (body) {
+    parts.push(body);
   }
 
   return parts.join("\n\n");
@@ -59,7 +54,6 @@ function formatMessageSection(
 
 /**
  * Convert a Slack message timestamp (Unix epoch string) to a readable UTC datetime.
- * e.g. "1358546515.000008" → "2013-01-19 01:41 UTC"
  */
 export function formatTimestamp(ts: string): string {
   const seconds = parseFloat(ts);

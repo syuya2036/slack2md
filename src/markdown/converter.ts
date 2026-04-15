@@ -1,6 +1,7 @@
-import type { SlackClient } from "../slack/types";
-import { transformMrkdwn, extractUserIds, type UserResolver } from "./transform";
-import { formatAttachments } from "./attachments";
+import type { SlackClient, SlackMessage } from "../slack/types";
+import { extractUserIds, type UserResolver } from "./transform";
+import { extractUserIdsFromBlocks } from "./rich-text";
+import { renderMessageBody, getRichTextBlocks } from "./render";
 import { formatThread } from "./thread";
 
 /**
@@ -22,20 +23,8 @@ export async function convertMessage(
   }
 
   const message = messages[0];
-  const userResolver = await buildUserResolver(client, [message.text]);
-
-  const parts: string[] = [];
-
-  if (message.text) {
-    parts.push(transformMrkdwn(message.text, userResolver));
-  }
-
-  const att = formatAttachments(message.files, message.attachments);
-  if (att) {
-    parts.push(att);
-  }
-
-  return parts.join("\n\n");
+  const userResolver = await buildUserResolverForMessage(client, message);
+  return renderMessageBody(message, userResolver);
 }
 
 /**
@@ -52,18 +41,20 @@ export async function convertThread(
     throw new Error("Thread not found");
   }
 
-  const allTexts = messages.map((m) => m.text).filter(Boolean);
   const userIds = new Set<string>();
 
-  // Collect user IDs from message texts
-  for (const text of allTexts) {
-    for (const id of extractUserIds(text)) {
-      userIds.add(id);
-    }
-  }
-
-  // Also collect user IDs from message authors
   for (const m of messages) {
+    if (m.text) {
+      for (const id of extractUserIds(m.text)) {
+        userIds.add(id);
+      }
+    }
+    const richBlocks = getRichTextBlocks(m);
+    if (richBlocks.length > 0) {
+      for (const id of extractUserIdsFromBlocks(richBlocks)) {
+        userIds.add(id);
+      }
+    }
     if (m.user) {
       userIds.add(m.user);
     }
@@ -87,37 +78,32 @@ export async function convertLatestMessage(
   }
 
   const message = messages[0];
-  const userResolver = await buildUserResolver(client, [message.text]);
-
-  const parts: string[] = [];
-
-  if (message.text) {
-    parts.push(transformMrkdwn(message.text, userResolver));
-  }
-
-  const att = formatAttachments(message.files, message.attachments);
-  if (att) {
-    parts.push(att);
-  }
-
-  return parts.join("\n\n");
+  const userResolver = await buildUserResolverForMessage(client, message);
+  return renderMessageBody(message, userResolver);
 }
 
 /**
- * Build a user resolver from texts that may contain user mentions.
+ * Build a user resolver for a single message (from both text and blocks).
  */
-async function buildUserResolver(
+async function buildUserResolverForMessage(
   client: SlackClient,
-  texts: string[],
+  message: SlackMessage,
 ): Promise<UserResolver> {
   const userIds = new Set<string>();
-  for (const text of texts) {
-    if (text) {
-      for (const id of extractUserIds(text)) {
-        userIds.add(id);
-      }
+
+  if (message.text) {
+    for (const id of extractUserIds(message.text)) {
+      userIds.add(id);
     }
   }
+
+  const richBlocks = getRichTextBlocks(message);
+  if (richBlocks.length > 0) {
+    for (const id of extractUserIdsFromBlocks(richBlocks)) {
+      userIds.add(id);
+    }
+  }
+
   return resolveUsers(client, [...userIds]);
 }
 
@@ -139,7 +125,6 @@ async function resolveUsers(
     }),
   );
 
-  // Log failures but don't block the conversion
   for (const r of results) {
     if (r.status === "rejected") {
       console.warn("Failed to resolve user:", r.reason);
