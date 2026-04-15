@@ -138,7 +138,7 @@ npm run typecheck     # TypeScript 型チェック
 src/
   index.ts                 # Hono アプリのエントリーポイント、ルート、ミドルウェア
   slack/
-    types.ts               # Slack ペイロード・API の型定義
+    types.ts               # Slack ペイロード・Block Kit・API の型定義
     verify.ts              # リクエスト署名検証 (Web Crypto API)
     permalink.ts           # Permalink URL パーサー
     client.ts              # Slack Web API クライアント (fetch ベース)
@@ -147,7 +147,9 @@ src/
     shortcut.ts            # メッセージショートカットハンドラー
   markdown/
     converter.ts           # オーケストレーター：データ取得・ユーザー解決・変換呼び出し
-    transform.ts           # Slack mrkdwn → Markdown 変換（純粋関数）
+    render.ts              # メッセージ本文レンダラー（blocks 優先、text フォールバック）
+    rich-text.ts           # Block Kit rich_text レンダラー（リスト、コードブロック、引用）
+    transform.ts           # Slack mrkdwn → Markdown 変換・純粋関数（text フォールバック用）
     attachments.ts         # ファイル・画像添付のフォーマット
     thread.ts              # スレッド（親＋返信）のフォーマット
   utils/
@@ -157,6 +159,8 @@ src/
 
 ## 変換ルール
 
+### インラインフォーマット
+
 | Slack | Markdown |
 |-------|----------|
 | `*太字*` | `**太字**` |
@@ -164,11 +168,34 @@ src/
 | `~取り消し線~` | `~~取り消し線~~` |
 | `` `インラインコード` `` | `` `インラインコード` `` |
 | ` ```コードブロック``` ` | ` ```コードブロック``` ` |
+
+### メンション・リンク
+
+| Slack | Markdown |
+|-------|----------|
 | `<@U123>` | `@表示名` |
 | `<#C123\|general>` | `#general` |
 | `<!here>` | `@here` |
 | `<https://...\|テキスト>` | `[テキスト](https://...)` |
 | `>` 引用 | `>` 引用 |
+
+### リスト（Block Kit rich_text 経由）
+
+| Slack | Markdown |
+|-------|----------|
+| 箇条書きリスト | `- item` |
+| 番号付きリスト | `1. item` |
+| ネスト箇条書き（indent 1） | `  - item` |
+| ネスト番号付き（indent 1） | `  1. item` |
+| 深いネスト（indent 2+） | `    - item`（レベルごとに2スペース） |
+| 箇条書き/番号付き混在 | 正しく混在出力 |
+
+メッセージに Block Kit `rich_text` ブロックが含まれている場合、正確なリスト構造を使用します。ない場合は `text` フィールドにフォールバックし、`•`（U+2022）を `-` に変換します。
+
+### 添付ファイル
+
+| Slack | Markdown |
+|-------|----------|
 | 画像添付 | `![ファイル名](url)` |
 | ファイル添付 | `- attachment: [ファイル名](url)` |
 

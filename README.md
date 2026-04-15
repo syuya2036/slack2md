@@ -138,7 +138,7 @@ npm run typecheck     # TypeScript type checking
 src/
   index.ts                 # Hono app entry point, routes, middleware
   slack/
-    types.ts               # Slack payload and API type definitions
+    types.ts               # Slack payload, Block Kit, and API type definitions
     verify.ts              # Request signature verification (Web Crypto)
     permalink.ts           # Permalink URL parser
     client.ts              # Thin Slack Web API client (fetch-based)
@@ -147,7 +147,9 @@ src/
     shortcut.ts            # Message shortcut handler
   markdown/
     converter.ts           # Orchestrator: fetches data, resolves users, calls transforms
-    transform.ts           # Slack mrkdwn → Markdown pure transforms
+    render.ts              # Message body renderer (prefers blocks, falls back to text)
+    rich-text.ts           # Block Kit rich_text renderer (lists, code blocks, quotes)
+    transform.ts           # Slack mrkdwn → Markdown pure transforms (text fallback)
     attachments.ts         # File and image attachment formatting
     thread.ts              # Thread (parent + replies) formatting
   utils/
@@ -157,6 +159,8 @@ src/
 
 ## Conversion Rules
 
+### Inline Formatting
+
 | Slack | Markdown |
 |-------|----------|
 | `*bold*` | `**bold**` |
@@ -164,11 +168,34 @@ src/
 | `~strikethrough~` | `~~strikethrough~~` |
 | `` `inline code` `` | `` `inline code` `` |
 | ` ```code block``` ` | ` ```code block``` ` |
+
+### Mentions & Links
+
+| Slack | Markdown |
+|-------|----------|
 | `<@U123>` | `@display_name` |
 | `<#C123\|general>` | `#general` |
 | `<!here>` | `@here` |
 | `<https://...\|text>` | `[text](https://...)` |
 | `>` quote | `>` quote |
+
+### Lists (via Block Kit rich_text)
+
+| Slack | Markdown |
+|-------|----------|
+| Bullet list | `- item` |
+| Ordered list | `1. item` |
+| Nested bullet (indent 1) | `  - item` |
+| Nested ordered (indent 1) | `  1. item` |
+| Deeper nesting (indent 2+) | `    - item` (2 spaces per level) |
+| Mixed bullet/ordered nesting | Correctly mixed output |
+
+When Block Kit `rich_text` blocks are available in the message, the bot uses them for accurate list structure. Otherwise, it falls back to the `text` field and converts `•` (U+2022) bullets to `-`.
+
+### Attachments
+
+| Slack | Markdown |
+|-------|----------|
 | Image attachment | `![filename](url)` |
 | File attachment | `- attachment: [filename](url)` |
 
