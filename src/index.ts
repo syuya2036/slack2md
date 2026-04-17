@@ -9,7 +9,7 @@ import { routeInteractivity } from "./handlers/interactivity";
 const app = new Hono<Env>();
 
 // Health check
-app.get("/", (c) => c.text("slack2md is running"));
+app.get("/", (c) => c.text("slack-tools is running"));
 
 // Slack signature verification middleware
 app.use("/slack/*", async (c, next) => {
