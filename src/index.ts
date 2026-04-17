@@ -1,9 +1,10 @@
 import { Hono } from "hono";
-import type { Env } from "./slack/types";
-import type { SlashCommandPayload, MessageShortcutPayload } from "./slack/types";
+import type { Env, SlackEventEnvelope, SlashCommandPayload } from "./slack/types";
 import { verifySlackRequest } from "./slack/verify";
 import { handleSlashCommand } from "./handlers/slash-command";
-import { handleShortcut } from "./handlers/shortcut";
+import { handleMtgSlashCommand } from "./handlers/meeting/slash";
+import { handleEventCallback } from "./handlers/events";
+import { routeInteractivity } from "./handlers/interactivity";
 
 const app = new Hono<Env>();
 
@@ -32,7 +33,7 @@ app.use("/slack/*", async (c, next) => {
   await next();
 });
 
-// Slash command endpoint: /tomd
+// Slash command endpoint: /tomd, /mtg
 app.post("/slack/commands", async (c) => {
   const body = c.get("rawBody");
   const params = new URLSearchParams(body);
@@ -49,7 +50,21 @@ app.post("/slack/commands", async (c) => {
     api_app_id: params.get("api_app_id") ?? "",
   };
 
-  // Ack immediately, process asynchronously
+  if (payload.command === "/mtg") {
+    // views.open must use trigger_id within 3s — await inline.
+    try {
+      await handleMtgSlashCommand(payload, c.env);
+    } catch (err) {
+      console.error("/mtg command error:", err);
+      return c.json({
+        response_type: "ephemeral",
+        text: ":warning: 日程調整の起動に失敗しました。再度お試しください。",
+      });
+    }
+    return c.body(null, 200);
+  }
+
+  // Default: /tomd — ack immediately, process asynchronously.
   c.executionCtx.waitUntil(
     handleSlashCommand(payload, c.env).catch((err) => {
       console.error("Unhandled slash command error:", err);
@@ -59,7 +74,7 @@ app.post("/slack/commands", async (c) => {
   return c.body(null, 200);
 });
 
-// Interactivity endpoint (message shortcuts, etc.)
+// Interactivity endpoint (message shortcuts, block_actions, view_submission)
 app.post("/slack/interactivity", async (c) => {
   const body = c.get("rawBody");
   const params = new URLSearchParams(body);
@@ -69,17 +84,49 @@ app.post("/slack/interactivity", async (c) => {
     return c.text("Missing payload", 400);
   }
 
-  let parsed: { type?: string };
+  let parsed: { type?: string } & Record<string, unknown>;
   try {
     parsed = JSON.parse(jsonPayload);
   } catch {
     return c.text("Invalid payload", 400);
   }
 
-  if (parsed.type === "message_action") {
+  let result;
+  try {
+    result = await routeInteractivity(parsed, c.env);
+  } catch (err) {
+    console.error("Interactivity routing error:", err);
+    return c.body(null, 200);
+  }
+
+  if (result.deferred) {
+    c.executionCtx.waitUntil(result.deferred);
+  }
+
+  if (result.body !== undefined) {
+    return c.json(result.body);
+  }
+  return c.body(null, 200);
+});
+
+// Events API endpoint: url_verification + event_callback
+app.post("/slack/events", async (c) => {
+  const body = c.get("rawBody");
+  let envelope: SlackEventEnvelope;
+  try {
+    envelope = JSON.parse(body);
+  } catch {
+    return c.text("Invalid payload", 400);
+  }
+
+  if (envelope.type === "url_verification") {
+    return c.json({ challenge: envelope.challenge ?? "" });
+  }
+
+  if (envelope.type === "event_callback") {
     c.executionCtx.waitUntil(
-      handleShortcut(parsed as MessageShortcutPayload, c.env).catch((err) => {
-        console.error("Unhandled shortcut error:", err);
+      handleEventCallback(envelope, c.env).catch((err) => {
+        console.error("Events handler error:", err);
       }),
     );
   }
