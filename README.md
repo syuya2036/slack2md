@@ -1,4 +1,4 @@
-# slack2md
+# slack-tools
 
 A Slack bot that converts Slack messages to standard Markdown and coordinates meeting schedules, running on Cloudflare Workers.
 
@@ -79,15 +79,15 @@ database is required.
 ### 1. Clone and Install
 
 ```bash
-git clone https://github.com/syuya2036/slack2md.git
-cd slack2md
+git clone https://github.com/syuya2036/slack-tools.git
+cd slack-tools
 npm install
 ```
 
 ### 2. Create a Slack App
 
 1. Go to [api.slack.com/apps](https://api.slack.com/apps) and click **Create New App** > **From scratch**
-2. Name it (e.g., "slack2md") and select your workspace
+2. Name it (e.g., "slack-tools") and select your workspace
 
 #### OAuth & Permissions
 

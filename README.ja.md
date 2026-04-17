@@ -1,4 +1,4 @@
-# slack2md
+# slack-tools
 
 Slack メッセージを標準 Markdown に変換し、さらに Slack 内で日程調整までこなす bot です。Cloudflare Workers 上で動作します。
 
@@ -74,15 +74,15 @@ Slack メッセージを標準 Markdown に変換し、さらに Slack 内で日
 ### 1. クローンとインストール
 
 ```bash
-git clone https://github.com/syuya2036/slack2md.git
-cd slack2md
+git clone https://github.com/syuya2036/slack-tools.git
+cd slack-tools
 npm install
 ```
 
 ### 2. Slack App の作成
 
 1. [api.slack.com/apps](https://api.slack.com/apps) にアクセスし、**Create New App** > **From scratch** をクリック
-2. アプリ名（例：「slack2md」）を入力し、ワークスペースを選択
+2. アプリ名（例：「slack-tools」）を入力し、ワークスペースを選択
 
 #### OAuth & Permissions
 
