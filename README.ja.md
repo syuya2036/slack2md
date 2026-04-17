@@ -1,6 +1,6 @@
 # slack2md
 
-Slack メッセージを標準 Markdown に変換する bot です。Cloudflare Workers 上で動作します。
+Slack メッセージを標準 Markdown に変換し、さらに Slack 内で日程調整までこなす bot です。Cloudflare Workers 上で動作します。
 
 [English README](./README.md)
 
@@ -15,6 +15,13 @@ Slack メッセージを標準 Markdown に変換する bot です。Cloudflare 
 - **添付ファイル対応** — 画像は `![alt](url)`、ファイルは添付リスト形式
 - **スレッド対応** — 親メッセージ＋リプライを構造化ドキュメントとして出力
 - **エフェメラル応答** — 変換結果はコマンド実行者のみに表示
+- **日程調整 bot**（調整さん / cal.com の代替）
+  - メッセージ内のキーワード（`mtg`, `MTG`, `meeting`, `ミーティング`, `打ち合わせ`, `打合せ`, `会議`, `面談` など）を自動検出し、発言者だけに ephemeral で案内
+  - `/mtg` スラッシュコマンドでモーダルを直接起動
+  - Block Kit モーダル（datepicker + timepicker）で最大10件の候補を入力
+  - 投稿に bot が 1️⃣–🔟 のリアクションを先付け、参加者はクリックで投票
+  - `reaction_added` / `reaction_removed` イベントでメッセージを即時更新（chat.update）
+  - **ストレージ不要**：候補情報はメッセージの `metadata` に格納
 
 ## 使い方
 
@@ -32,6 +39,28 @@ Slack メッセージを標準 Markdown に変換する bot です。Cloudflare 
 2. 「...」（その他のアクション）メニューをクリック
 3. **Convert to Markdown** を選択
 4. 変換された Markdown がエフェメラルメッセージとして表示される
+
+### 日程調整 bot
+
+**自動トリガー**: チャンネルで `mtg` / `MTG` / `meeting` / `ミーティング` /
+`打ち合わせ` / `打合せ` / `会議` / `面談` などのキーワードを含むメッセージを
+投稿すると、bot が発言者だけに見える ephemeral で **[日程調整を開始]** /
+**[キャンセル]** を提示します。
+
+**手動トリガー**: 任意のチャンネルで `/mtg` を実行するとモーダルが開きます。
+
+キーワード一覧と境界判定ルールは
+[`src/meeting/keywords.ts`](./src/meeting/keywords.ts) に集約しています。
+編集して再デプロイすれば挙動をカスタマイズできます。
+
+フロー:
+
+1. **日程調整を開始** をクリック（または `/mtg`）→ モーダルが開く。
+2. タイトル（必須）と候補日時を2〜10件入力。**候補を増やす** ボタンで最大10件まで拡張。
+3. 送信 → bot がチャンネル（またはスレッド）に候補一覧を投稿し、1️⃣2️⃣3️⃣ … のリアクションを先付け。
+4. 参加者がリアクションをクリックすると、bot が即座にメッセージを更新して得票数を反映。
+
+候補データは bot 投稿の `metadata.event_payload` に格納されるため、DB は不要です。
 
 ## セットアップ
 
@@ -62,22 +91,28 @@ npm install
 | スコープ | 用途 |
 |---------|------|
 | `commands` | スラッシュコマンドの登録 |
-| `chat:write` | エフェメラルメッセージの送信 |
+| `chat:write` | メッセージおよびエフェメラル送信 |
+| `chat:write.public` | bot が参加していないチャンネルにも日程調整を投稿 |
 | `channels:history` | パブリックチャンネルのメッセージ読み取り |
 | `groups:history` | プライベートチャンネルのメッセージ読み取り |
 | `im:history` | DM のメッセージ読み取り |
 | `mpim:history` | グループ DM のメッセージ読み取り |
 | `users:read` | ユーザーメンションの表示名解決 |
+| `reactions:read` | 日程調整メッセージのリアクション数取得 |
+| `reactions:write` | 1️⃣–🔟 の絵文字リアクションの先付け |
 
 アプリをワークスペースにインストールし、**Bot User OAuth Token**（`xoxb-...`）を控えておいてください。
 
 #### スラッシュコマンド
 
-1. **Slash Commands** > **Create New Command**
-2. Command: `/tomd`
-3. Request URL: `https://<your-worker>.workers.dev/slack/commands`
-4. Description: 「Slack メッセージを Markdown に変換」
-5. Usage hint: `[thread] [permalink]`
+下記2つのコマンドを同じ Request URL で登録します。
+
+| Command | 説明 | Usage hint |
+|---------|------|-----------|
+| `/tomd` | Slack メッセージを Markdown に変換 | `[thread] [permalink]` |
+| `/mtg` | 日程調整モーダルを起動 | _なし_ |
+
+Request URL: `https://<your-worker>.workers.dev/slack/commands`
 
 #### Interactivity（インタラクティビティ）
 
@@ -86,6 +121,15 @@ npm install
 3. **Shortcuts** の下で **Create New Shortcut** > **On messages**
 4. Name: `Convert to Markdown`
 5. Callback ID: `convert_to_markdown`
+
+#### Event Subscriptions（イベント購読）
+
+1. **Event Subscriptions** > トグルを **On**
+2. Request URL: `https://<your-worker>.workers.dev/slack/events`
+3. **Subscribe to bot events** に以下を追加:
+   - `message.channels`, `message.groups`, `message.im`, `message.mpim`（キーワード検出）
+   - `reaction_added`, `reaction_removed`（集計更新）
+4. 変更を保存し、**アプリをワークスペースへ再インストール**して新しいスコープを反映。
 
 #### Signing Secret
 
