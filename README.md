@@ -1,6 +1,6 @@
 # slack2md
 
-A Slack bot that converts Slack messages to standard Markdown, running on Cloudflare Workers.
+A Slack bot that converts Slack messages to standard Markdown and coordinates meeting schedules, running on Cloudflare Workers.
 
 [日本語版 README](./README.ja.md)
 
@@ -15,6 +15,13 @@ A Slack bot that converts Slack messages to standard Markdown, running on Cloudf
 - **Attachment handling** — Images as `![alt](url)`, files as attachment list items
 - **Thread support** — Parent message + replies formatted as a structured document
 - **Ephemeral responses** — Results are visible only to the user who invoked the command
+- **Meeting scheduler** — In-Slack replacement for 調整さん / cal.com
+  - Auto-detects keywords (`mtg`, `MTG`, `meeting`, `ミーティング`, `打ち合わせ`, `打合せ`, `会議`, `面談`, …) in channel messages and offers an ephemeral prompt
+  - `/mtg` slash command opens the scheduling modal directly
+  - Block Kit modal with datepicker + timepicker for up to 10 candidates
+  - Participants vote by clicking pre-seeded 1️⃣–🔟 reactions
+  - Tally updates live (chat.update) on every `reaction_added` / `reaction_removed`
+  - **No database**: state is stored entirely in the posted message's metadata
 
 ## Usage
 
@@ -32,6 +39,33 @@ A Slack bot that converts Slack messages to standard Markdown, running on Cloudf
 2. Click the "..." (more actions) menu
 3. Select **Convert to Markdown**
 4. The converted Markdown appears as an ephemeral message
+
+### Meeting Scheduler
+
+**Auto trigger**: Post a message in a channel that contains a meeting keyword
+(e.g. `mtg`, `MTG`, `meeting`, `ミーティング`, `打ち合わせ`, `打合せ`, `会議`,
+`面談`). The bot replies with an ephemeral card offering **[日程調整を開始]**
+and **[キャンセル]** buttons.
+
+**Manual trigger**: Run `/mtg` in any channel to open the scheduling modal
+directly.
+
+Keyword list and boundary rules live in
+[`src/meeting/keywords.ts`](./src/meeting/keywords.ts) — edit it and redeploy
+to tune trigger behavior.
+
+Flow:
+
+1. Click **日程調整を開始** (or run `/mtg`) — a modal opens.
+2. Enter a title and 2–10 candidate date / time slots. Click **候補を増やす** to
+   reveal up to 10 rows.
+3. Submit — the bot posts a message with numbered candidates and pre-adds
+   1️⃣2️⃣3️⃣… reactions.
+4. Participants click a number reaction to vote; the bot updates the post's
+   vote counts in real time.
+
+Candidate data is stored in the message's `metadata.event_payload`, so no
+database is required.
 
 ## Setup
 
@@ -62,22 +96,28 @@ Add the following **Bot Token Scopes**:
 | Scope | Purpose |
 |-------|---------|
 | `commands` | Register slash commands |
-| `chat:write` | Send ephemeral messages |
+| `chat:write` | Send messages and ephemerals |
+| `chat:write.public` | Post scheduling messages in channels the bot has not joined |
 | `channels:history` | Read messages in public channels |
 | `groups:history` | Read messages in private channels |
 | `im:history` | Read messages in DMs |
 | `mpim:history` | Read messages in group DMs |
 | `users:read` | Resolve user mentions to display names |
+| `reactions:read` | Read reaction counts on scheduling messages |
+| `reactions:write` | Seed 1️⃣–🔟 reactions on scheduling messages |
 
 Install the app to your workspace and note the **Bot User OAuth Token** (`xoxb-...`).
 
-#### Slash Command
+#### Slash Commands
 
-1. Go to **Slash Commands** > **Create New Command**
-2. Command: `/tomd`
-3. Request URL: `https://<your-worker>.workers.dev/slack/commands`
-4. Description: "Convert a Slack message to Markdown"
-5. Usage hint: `[thread] [permalink]`
+Create both slash commands pointing at the same endpoint:
+
+| Command | Description | Usage hint |
+|---------|-------------|------------|
+| `/tomd` | Convert a Slack message to Markdown | `[thread] [permalink]` |
+| `/mtg` | Start a meeting scheduling modal | _none_ |
+
+Request URL: `https://<your-worker>.workers.dev/slack/commands`
 
 #### Interactivity
 
@@ -86,6 +126,16 @@ Install the app to your workspace and note the **Bot User OAuth Token** (`xoxb-.
 3. Under **Shortcuts**, click **Create New Shortcut** > **On messages**
 4. Name: `Convert to Markdown`
 5. Callback ID: `convert_to_markdown`
+
+#### Event Subscriptions
+
+1. Go to **Event Subscriptions** > toggle **On**
+2. Request URL: `https://<your-worker>.workers.dev/slack/events`
+3. Under **Subscribe to bot events**, add:
+   - `message.channels`, `message.groups`, `message.im`, `message.mpim` (trigger detection)
+   - `reaction_added`, `reaction_removed` (live tally updates)
+4. Save changes and **reinstall the app** to the workspace so new scopes take
+   effect.
 
 #### Signing Secret
 
@@ -138,16 +188,32 @@ npm run typecheck     # TypeScript type checking
 src/
   index.ts                 # Hono app entry point, routes, middleware
   slack/
-    types.ts               # Slack payload and API type definitions
+    types.ts               # Slack payload, Block Kit, and API type definitions
     verify.ts              # Request signature verification (Web Crypto)
     permalink.ts           # Permalink URL parser
     client.ts              # Thin Slack Web API client (fetch-based)
   handlers/
     slash-command.ts       # /tomd command handler
     shortcut.ts            # Message shortcut handler
+    events.ts              # Events API router (messages + reactions)
+    interactivity.ts       # Interactivity router (message_action, block_actions, view_submission)
+    meeting/
+      trigger.ts           # Keyword-triggered ephemeral prompt
+      actions.ts           # [設定] / [キャンセル] / [候補を増やす] button handlers
+      submit.ts            # view_submission → public post + reaction seeding
+      reactions.ts         # reaction_added/removed → chat.update tally
+      slash.ts             # /mtg command handler
+  meeting/
+    keywords.ts            # Configurable trigger keyword list + matcher
+    candidates.ts          # Candidate slot type + number emoji helpers
+    metadata.ts            # mtg_schedule_v1 metadata encode/decode
+    tally.ts               # Per-candidate vote counting (bot reaction excluded)
+    views.ts               # Block Kit builders for ephemeral / modal / public message
   markdown/
     converter.ts           # Orchestrator: fetches data, resolves users, calls transforms
-    transform.ts           # Slack mrkdwn → Markdown pure transforms
+    render.ts              # Message body renderer (prefers blocks, falls back to text)
+    rich-text.ts           # Block Kit rich_text renderer (lists, code blocks, quotes)
+    transform.ts           # Slack mrkdwn → Markdown pure transforms (text fallback)
     attachments.ts         # File and image attachment formatting
     thread.ts              # Thread (parent + replies) formatting
   utils/
@@ -157,6 +223,8 @@ src/
 
 ## Conversion Rules
 
+### Inline Formatting
+
 | Slack | Markdown |
 |-------|----------|
 | `*bold*` | `**bold**` |
@@ -164,11 +232,34 @@ src/
 | `~strikethrough~` | `~~strikethrough~~` |
 | `` `inline code` `` | `` `inline code` `` |
 | ` ```code block``` ` | ` ```code block``` ` |
+
+### Mentions & Links
+
+| Slack | Markdown |
+|-------|----------|
 | `<@U123>` | `@display_name` |
 | `<#C123\|general>` | `#general` |
 | `<!here>` | `@here` |
 | `<https://...\|text>` | `[text](https://...)` |
 | `>` quote | `>` quote |
+
+### Lists (via Block Kit rich_text)
+
+| Slack | Markdown |
+|-------|----------|
+| Bullet list | `- item` |
+| Ordered list | `1. item` |
+| Nested bullet (indent 1) | `  - item` |
+| Nested ordered (indent 1) | `  1. item` |
+| Deeper nesting (indent 2+) | `    - item` (2 spaces per level) |
+| Mixed bullet/ordered nesting | Correctly mixed output |
+
+When Block Kit `rich_text` blocks are available in the message, the bot uses them for accurate list structure. Otherwise, it falls back to the `text` field and converts `•` (U+2022) bullets to `-`.
+
+### Attachments
+
+| Slack | Markdown |
+|-------|----------|
 | Image attachment | `![filename](url)` |
 | File attachment | `- attachment: [filename](url)` |
 

@@ -75,4 +75,32 @@ describe("formatThread", () => {
     const result = formatThread(messages, resolver);
     expect(result).toContain("**unknown**");
   });
+
+  it("prefers blocks over text when available", () => {
+    const messages: SlackMessage[] = [
+      {
+        text: "• Item 1\n• Item 2",
+        ts: "1700000000.000000",
+        user: "U1",
+        blocks: [
+          {
+            type: "rich_text",
+            elements: [
+              {
+                type: "rich_text_list",
+                style: "bullet",
+                indent: 0,
+                elements: [
+                  { type: "rich_text_section", elements: [{ type: "text", text: "Item 1" }] },
+                  { type: "rich_text_section", elements: [{ type: "text", text: "Item 2" }] },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ];
+    const result = formatThread(messages, resolver);
+    expect(result).toContain("- Item 1\n- Item 2");
+  });
 });
